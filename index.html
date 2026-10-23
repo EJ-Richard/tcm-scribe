@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>中醫 AI 病歷助手</title>
+<meta name="theme-color" content="#1f8a4c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="中醫病歷">
+<meta name="referrer" content="no-referrer">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🩺 中醫 AI 病歷助手</h1>
+    <div class="hdr-right">
+      <span id="status" class="pill"><span class="dot"></span><span id="statusText">待命</span></span>
+      <span id="timer" class="timer">00:00</span>
+    </div>
+  </header>
+
+  <div class="note">⚠️ 產生的是 <b>AI 病歷草稿</b>，可能有辨識或推論錯誤，<b>須由醫師審閱修改</b>。
+    錄音會上傳到 <b id="provName">Google Gemini</b>（美國雲端）做辨識與病歷撰寫，請<b>避免說出病人姓名、身分證字號、病歷號</b>等可識別資料。</div>
+
+  <div id="setupWarn" class="hint warn" hidden></div>
+  <div id="recoverBox" class="recover" hidden>
+    <div id="recoverText"></div>
+    <div class="row">
+      <button id="btnRecoverUse" class="primary">↻ 用這段錄音產生病歷</button>
+      <button id="btnRecoverDiscard">刪除這段錄音</button>
+    </div>
+  </div>
+
+  <div class="bigbtns">
+    <button id="btnStart" class="big start">🎙️ 開始錄音</button>
+    <button id="btnStop" class="big stop" disabled>⏹️ 結束並產生病歷</button>
+  </div>
+  <div class="meter" aria-hidden="true"><div id="meterBar"></div></div>
+  <div id="recHint" class="hint">錄音只存在這支手機上，錄音中不需要網路。按「結束並產生病歷」才會上傳。</div>
+
+  <div class="filepick">
+    <label class="filebtn">📂 選擇已錄好的音檔（手機錄音 App）
+      <input id="fileInput" type="file" accept="audio/*,video/mp4,.m4a,.mp3,.wav,.aac,.mp4,.ogg,.opus,.flac,.webm,.mkv">
+    </label>
+  </div>
+
+  <div id="progress" class="progress" hidden>
+    <div class="steps">
+      <span id="stepUpload" class="step">① 上傳辨識</span>
+      <span id="stepWrite" class="step">② 撰寫病歷</span>
+      <span id="stepSend" class="step">③ 寄出</span>
+    </div>
+    <div id="progressText" class="hint"></div>
+  </div>
+
+  <div class="card">
+    <h2>逐字稿 <small>說話者編號為自動判斷，可直接修改</small></h2>
+    <textarea id="transcript" placeholder="錄音結束後，辨識出的逐字稿（說話者1／說話者2）會出現在這裡。也可以直接貼上或打字。"></textarea>
+    <div class="row">
+      <button id="btnGenerate">🤖 用目前逐字稿重新產生病歷</button>
+      <button id="btnRetranscribe" disabled>🔁 重新辨識錄音</button>
+      <button id="btnDownloadAudio" disabled>💾 下載錄音檔</button>
+    </div>
+    <audio id="player" controls hidden></audio>
+  </div>
+
+  <div class="card">
+    <h2>病歷草稿 <small>可修改後再寄出</small></h2>
+    <textarea id="record" placeholder="AI 產生的病歷草稿（S / O / 處置 / 衛教 / 待確認）會出現在這裡。"></textarea>
+    <div class="row">
+      <button id="btnSend" class="primary">📧 寄出</button>
+      <button id="btnMailto">✉️ 用郵件 App 開啟</button>
+      <button id="btnCopy">📋 複製病歷</button>
+    </div>
+    <div class="row">
+      <button id="btnClear" class="danger">🗑️ 清除本次（錄音、逐字稿、病歷）</button>
+    </div>
+    <div id="sendMsg" class="msg"></div>
+  </div>
+
+  <details id="settings" class="card">
+    <summary>⚙️ 設定（只存在這個瀏覽器，不會上傳）</summary>
+
+    <label for="recipient">收件信箱（必填，病歷寄到這裡）</label>
+    <input id="recipient" type="email" inputmode="email" placeholder="例如：yourname@gmail.com" autocomplete="email">
+
+    <label for="provider">AI 服務</label>
+    <select id="provider">
+      <option value="gemini">Google Gemini（免費額度，預設）</option>
+      <option value="xai">xAI Grok（付費：語音辨識＋病歷）</option>
+    </select>
+
+    <div id="geminiBox">
+      <label for="geminiKey">Gemini API 金鑰（必填）</label>
+      <div class="inline">
+        <input id="geminiKey" type="password" placeholder="AIza…" autocomplete="off" spellcheck="false">
+        <button type="button" class="small showkey" data-for="geminiKey">顯示</button>
+      </div>
+      <div class="hint">到 <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> 免費建立。免費方案每日次數有限，且 Google <b>可能用免費方案的內容改善產品</b>，請勿說出病人姓名、身分證字號。</div>
+    </div>
+
+    <div id="xaiBox" hidden>
+      <label for="xaiKey">xAI API 金鑰（必填）</label>
+      <div class="inline">
+        <input id="xaiKey" type="password" placeholder="xai-…" autocomplete="off" spellcheck="false">
+        <button type="button" class="small showkey" data-for="xaiKey">顯示</button>
+      </div>
+      <div class="hint">到 <a href="https://console.x.ai" target="_blank" rel="noopener">console.x.ai</a> 建立金鑰並儲值（語音辨識約 US$0.10／小時）。</div>
+    </div>
+    <div class="hint">金鑰只存在本機瀏覽器（localStorage），由這支手機直接呼叫 AI 服務，不經過任何第三方伺服器。</div>
+
+    <label for="relayUrl">寄信中繼網址（Google Apps Script，選填但建議）</label>
+    <input id="relayUrl" type="url" placeholder="https://script.google.com/macros/s/……/exec" autocomplete="off" spellcheck="false">
+    <label for="relayToken">中繼密碼（與 mail_relay.gs 裡的 RELAY_TOKEN 相同）</label>
+    <input id="relayToken" type="password" placeholder="自己設定的一串密碼" autocomplete="off" spellcheck="false">
+    <div class="hint">沒設定中繼時，「寄出」會改用郵件 App 開啟（需再按一次傳送）。設定方式見安裝說明。</div>
+
+    <label class="chk"><input id="autoSend" type="checkbox" checked> 產生病歷後自動寄出（需已設定中繼）</label>
+    <label class="chk"><input id="attachTranscript" type="checkbox" checked> 信件附上原始逐字稿</label>
+    <label class="chk"><input id="toTraditional" type="checkbox" checked> 逐字稿自動轉成繁體字</label>
+
+    <details class="adv">
+      <summary>進階</summary>
+      <label for="geminiModel">Gemini 模型（額度用完會自動改用備用模型）</label>
+      <input id="geminiModel" type="text" placeholder="gemini-3.8-flash" spellcheck="false">
+      <label for="xaiModel">xAI 病歷撰寫模型</label>
+      <input id="xaiModel" type="text" placeholder="grok-4.20-non-reasoning" spellcheck="false">
+      <label for="language">辨識語言（xAI 用）</label>
+      <select id="language">
+        <option value="zh">中文（華語）zh</option>
+        <option value="">自動偵測（台語、英文夾雜很多時可試）</option>
+      </select>
+      <label for="extraTerms">自訂關鍵詞（逗號或換行分隔；常用穴位、方名、病名，可提升辨識）</label>
+      <textarea id="extraTerms" class="short" placeholder="例如：天宗, 秩邊, 獨活寄生湯"></textarea>
+      <label class="chk"><input id="keepAudio" type="checkbox" checked> 寄出後仍保留錄音在手機（直到按清除或下次錄音）</label>
+    </details>
+
+    <div class="row">
+      <button id="btnSave" class="primary">💾 儲存設定</button>
+      <button id="btnTestRelay">📨 寄測試信</button>
+      <button id="btnForget" class="danger">清除所有設定</button>
+    </div>
+    <div id="setMsg" class="msg"></div>
+  </details>
+
+  <footer>
+    隱私說明：錄音先存在本機（IndexedDB），按「結束並產生病歷」後才由這支手機直接上傳到您選的 AI 服務
+    （預設 Google Gemini：一次完成逐字稿與病歷；或 xAI：grok-voice-transcribe-2.0 辨識＋Grok 撰寫），再經由您自己的 Gmail（Apps Script 中繼）寄出。
+    本網站是純靜態網頁，沒有自己的伺服器，不會收到您的錄音、金鑰或病歷。Gemini 免費方案的內容可能被 Google 用於改善產品。
+    請勿說出病人姓名、身分證字號、病歷號等可識別資訊。
+    <br><span id="ver"></span>
+  </footer>
+</div>
+<script src="prompt.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
